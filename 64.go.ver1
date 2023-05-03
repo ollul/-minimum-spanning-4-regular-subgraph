@@ -1,0 +1,197 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+const NUM = 64
+
+type edge struct {
+	v1, v2 int
+	len    uint16
+}
+
+type point struct {
+	x, y uint16
+	i    int
+}
+
+var points []point
+var incidence [][]uint16
+
+func max(a, b uint16) uint16 {
+	if a > b {
+		return a
+	}
+
+	return b
+}
+
+func prim() [][]uint16 {
+	res := make([][]uint16, 0)
+	for i := 0; i < NUM; i++ {
+		res = append(res, make([]uint16, NUM))
+	}
+	used := make([]bool, NUM)
+	min_e := make([]uint16, NUM)
+	sel_e := make([]int, NUM)
+	for i := 0; i < NUM; i++ {
+		min_e[i] = 65535
+		sel_e[i] = -1
+	}
+	min_e[0] = 0
+	for i := 0; i < NUM; i++ {
+		v := -1
+		for j := 0; j < NUM; j++ {
+			if !used[j] && (v == -1 || min_e[j] < min_e[v]) {
+				v = j
+			}
+		}
+		if min_e[v] == 65535 {
+			return nil
+		}
+
+		used[v] = true
+		if sel_e[v] != -1 {
+			res[v][sel_e[v]] = 1
+			res[sel_e[v]][v] = 1
+		}
+
+		for to := 0; to < NUM; to++ {
+			if incidence[v][to] < min_e[to] {
+				min_e[to] = incidence[v][to]
+				sel_e[to] = v
+			}
+		}
+	}
+
+	return res
+}
+
+func dfs(mst [][]uint16, start int, visited []bool, list *[]int) {
+	*list = append(*list, start)
+	visited[start] = true
+	for i := 0; i < NUM; i++ {
+		if i == start {
+			continue
+		}
+		if mst[start][i] == 1 {
+			if visited[i] {
+				continue
+			}
+
+			dfs(mst, i, visited, list)
+		}
+	}
+}
+
+func tsp_approximate() []int {
+	mst := prim()
+	if mst == nil {
+		return nil
+	}
+	visited := make([]bool, NUM)
+	var list []int
+	dfs(mst, 0, visited, &list)
+	list = append(list, 0)
+
+	return list
+}
+
+func taxi(v1, v2 point) (res uint16) {
+	if v1.x > v2.x {
+		res += v1.x - v2.x
+	} else {
+		res += v2.x - v1.x
+	}
+	if v1.y > v2.y {
+		res += v1.y - v2.y
+	} else {
+		res += v2.y - v1.y
+	}
+	return
+}
+
+func main() {
+	f, _ := os.Open(fmt.Sprintf("../Taxicab_%d.txt", NUM))
+	content, _ := io.ReadAll(f)
+	str := strings.Split(string(content), "\r\n")
+
+	for i, v := range str {
+		nums := strings.Split(v, string([]byte{0x09}))
+		if len(nums) < 2 {
+			continue
+		}
+		x, _ := strconv.Atoi(nums[0])
+		y, _ := strconv.Atoi(nums[1])
+		points = append(points, point{x: uint16(x), y: uint16(y), i: i})
+	}
+
+	for i := 0; i < NUM; i++ {
+		incidence = append(incidence, make([]uint16, NUM))
+	}
+
+	for i, v1 := range points {
+		for j, v2 := range points {
+			dist := taxi(v1, v2)
+			incidence[i][j] = dist
+		}
+	}
+
+	res1 := tsp_approximate()
+	for i := 0; i < len(res1)-1; i++ {
+		incidence[res1[i]][res1[i+1]] = 65535
+		incidence[res1[i+1]][res1[i]] = 65535
+	}
+	var t [][]uint16
+	for i := 0; i < NUM; i++ {
+		t = append(t, make([]uint16, NUM))
+	}
+	res2 := tsp_approximate()
+	for i := 0; i < len(res1)-1; i++ {
+		t[res1[i]][res1[i+1]] = 1
+		t[res1[i+1]][res1[i]] = 1
+		t[res2[i]][res2[i+1]] = 1
+		t[res2[i+1]][res2[i]] = 1
+	}
+	var bad []int
+	two := make(map[int]bool)
+	for i := 0; i < NUM; i++ {
+		cnt := 0
+		for j := 0; j < NUM; j++ {
+			if t[i][j] == 1 {
+				cnt++
+			}
+		}
+		if cnt != 4 {
+			bad = append(bad, i)
+			if cnt == 2 {
+				two[i] = true
+			}
+		}
+	}
+	for i := 0; i < len(bad); i += 2 {
+		t[bad[i]][bad[i+1]] = 1
+		t[bad[i+1]][bad[i]] = 1
+	}
+	cost := 0
+	var max_edge uint16
+	edges := []edge{}
+	for i := 0; i < NUM; i++ {
+		for j := i + 1; j < NUM; j++ {
+			if t[i][j] == 1 {
+				edges = append(edges, edge{v1: i, v2: j, len: taxi(points[i], points[j])})
+				cost += int(taxi(points[i], points[j]))
+				fmt.Printf("e %d %d\n", i+1, j+1)
+				max_edge = max(max_edge, taxi(points[i], points[j]))
+			}
+		}
+	}
+	fmt.Printf("c Вес 4-регулярного подграфа = %d, самое длинное ребро = %d\n", cost, max_edge)
+	fmt.Printf("p edge %d %d\n", NUM, 4*NUM/2)
+}
